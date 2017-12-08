@@ -22,7 +22,9 @@
     </Console>
   </Appenders>
   <Loggers>
-    <Root level="INFO">
+    <!-- suppress ERROR org.apache.storm.blobstore.BlobStoreUtils - Could not update the blob with key: key when testing -->
+    <Logger name="org.apache.storm.blobstore" level="FATAL" />
+    <Root level="ERROR">
       <appender-ref ref="console" />
     </Root>
   </Loggers>
