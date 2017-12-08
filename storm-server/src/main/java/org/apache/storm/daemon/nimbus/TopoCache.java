@@ -124,9 +124,8 @@ public class TopoCache {
         throws AuthorizationException, KeyAlreadyExistsException, IOException {
         final String key = ConfigUtils.masterStormCodeKey(topoId);
         final List<AccessControl> acl = BlobStoreAclHandler.DEFAULT;
-        SettableBlobMeta meta = new SettableBlobMeta(acl);
-        store.createBlob(key, Utils.serialize(topo), meta, who);
-        topos.put(topoId, new WithAcl<>(meta.get_acl(), topo));
+        store.createBlob(key, Utils.serialize(topo), new SettableBlobMeta(acl), who);
+        topos.put(topoId, new WithAcl<>(acl, topo));
     }
 
     /**
@@ -207,9 +206,8 @@ public class TopoCache {
         throws AuthorizationException, KeyAlreadyExistsException, IOException {
         final String key = ConfigUtils.masterStormConfKey(topoId);
         final List<AccessControl> acl = BlobStoreAclHandler.DEFAULT;
-        SettableBlobMeta meta = new SettableBlobMeta(acl);
-        store.createBlob(key, Utils.toCompressedJsonConf(topoConf), meta, who);
-        confs.put(topoId, new WithAcl<>(meta.get_acl(), topoConf));
+        store.createBlob(key, Utils.toCompressedJsonConf(topoConf), new SettableBlobMeta(acl), who);
+        confs.put(topoId, new WithAcl<>(acl, topoConf));
     }
 
     /**

@@ -18,35 +18,6 @@
 
 package org.apache.storm.utils;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.FileWriter;
-import java.io.InputStream;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.io.PrintStream;
-import java.io.RandomAccessFile;
-import java.nio.file.Files;
-import java.nio.file.FileSystems;
-import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Enumeration;
-import java.util.HashMap;
-import java.util.jar.JarEntry;
-import java.util.jar.JarFile;
-import java.util.List;
-import java.util.Map;
-import java.util.zip.GZIPInputStream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
-import javax.security.auth.Subject;
-
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 import org.apache.commons.exec.CommandLine;
@@ -54,39 +25,74 @@ import org.apache.commons.exec.DefaultExecutor;
 import org.apache.commons.exec.ExecuteException;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
+import org.apache.storm.Config;
+import org.apache.storm.DaemonConfig;
 import org.apache.storm.blobstore.BlobStore;
 import org.apache.storm.blobstore.BlobStoreAclHandler;
 import org.apache.storm.blobstore.ClientBlobStore;
 import org.apache.storm.blobstore.InputStreamWithMeta;
 import org.apache.storm.blobstore.LocalFsBlobStore;
-import org.apache.storm.blobstore.LocalModeClientBlobStore;
-import org.apache.storm.Config;
-import org.apache.storm.Constants;
 import org.apache.storm.daemon.StormCommon;
-import org.apache.storm.DaemonConfig;
-import org.apache.storm.generated.AccessControl;
-import org.apache.storm.generated.AccessControlType;
-import org.apache.storm.generated.AuthorizationException;
-import org.apache.storm.generated.InvalidTopologyException;
-import org.apache.storm.generated.KeyNotFoundException;
-import org.apache.storm.generated.ReadableBlobMeta;
-import org.apache.storm.generated.SettableBlobMeta;
-import org.apache.storm.generated.StormTopology;
+import org.apache.storm.generated.*;
+import org.apache.storm.localizer.Localizer;
 import org.apache.storm.nimbus.NimbusInfo;
-import org.apache.storm.scheduler.resource.NormalizedResourceRequest;
 import org.apache.storm.scheduler.resource.ResourceUtils;
-import org.apache.storm.security.auth.SingleUserPrincipal;
 import org.apache.thrift.TException;
+import org.apache.storm.utils.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.PrintStream;
+import java.io.RandomAccessFile;
+import java.nio.file.FileSystems;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
+import java.util.zip.GZIPInputStream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 public class ServerUtils {
     public static final Logger LOG = LoggerFactory.getLogger(ServerUtils.class);
 
+    public static final String FILE_PATH_SEPARATOR = System.getProperty("file.separator");
+    public static final String CLASS_PATH_SEPARATOR = System.getProperty("path.separator");
     public static final boolean IS_ON_WINDOWS = "Windows_NT".equals(System.getenv("OS"));
+    public static final String CURRENT_BLOB_SUFFIX_ID = "current";
 
+    public static final String DEFAULT_CURRENT_BLOB_SUFFIX = "." + CURRENT_BLOB_SUFFIX_ID;
+    public static final String DEFAULT_BLOB_VERSION_SUFFIX = ".version";
     public static final int SIGKILL = 9;
     public static final int SIGTERM = 15;
+    /**
+     * Make sure a given key name is valid for the storm config.
+     * Throw RuntimeException if the key isn't valid.
+     * @param name The name of the config key to check.
+     */
+    private static final Set<String> disallowedKeys = new HashSet<>(Arrays.asList(new String[] {"/", ".", ":", "\\"}));
 
     // A singleton instance allows us to mock delegated static methods in our
     // tests by subclassing.
@@ -165,6 +171,14 @@ public class ServerUtils {
         return StringUtils.join(changedCommands, " ");
     }
 
+    public static String constructVersionFileName(String fileName) {
+        return fileName + DEFAULT_BLOB_VERSION_SUFFIX;
+    }
+
+    public static String constructBlobCurrentSymlinkName(String fileName) {
+        return fileName + DEFAULT_CURRENT_BLOB_SUFFIX;
+    }
+
     /**
      * Takes an input dir or file and returns the disk usage on that local directory.
      * Very basic implementation.
@@ -197,14 +211,17 @@ public class ServerUtils {
         }
     }
 
+    public static long localVersionOfBlob(String localFile) {
+        return Utils.getVersionFromBlobVersionFile(new File(localFile + DEFAULT_BLOB_VERSION_SUFFIX));
+    }
+
+    public static String constructBlobWithVersionFileName(String fileName, long version) {
+        return fileName + "." + version;
+    }
+
     public static ClientBlobStore getClientBlobStoreForSupervisor(Map<String, Object> conf) {
-        ClientBlobStore store;
-        if (ConfigUtils.isLocalMode(conf)) {
-            store = new LocalModeClientBlobStore(getNimbusBlobStore(conf, null));
-        } else {
-            store = (ClientBlobStore) ReflectionUtils.newInstance(
+        ClientBlobStore store = (ClientBlobStore) ReflectionUtils.newInstance(
                 (String) conf.get(DaemonConfig.SUPERVISOR_BLOBSTORE));
-        }
         store.prepare(conf);
         return store;
     }
@@ -268,12 +285,16 @@ public class ServerUtils {
         return Files.getOwner(FileSystems.getDefault().getPath(path)).getName();
     }
 
+    public static Localizer createLocalizer(Map<String, Object> conf, String baseDir) {
+        return new Localizer(conf, baseDir);
+    }
+
     public static String containerFilePath (String dir) {
-        return dir + File.separator + "launch_container.sh";
+        return dir + FILE_PATH_SEPARATOR + "launch_container.sh";
     }
 
     public static String scriptFilePath (String dir) {
-        return dir + File.separator + "storm-worker-script.sh";
+        return dir + FILE_PATH_SEPARATOR + "storm-worker-script.sh";
     }
 
     /**
@@ -618,6 +639,18 @@ public class ServerUtils {
         }
     }
 
+    public static void validateKeyName(String name) {
+
+        for(String key : disallowedKeys) {
+            if( name.contains(key) ) {
+                throw new RuntimeException("Key name cannot contain any of the following: " + disallowedKeys.toString());
+            }
+        }
+        if(name.trim().isEmpty()) {
+            throw new RuntimeException("Key name cannot be blank");
+        }
+    }
+
     /**
      * Given a zip File input it will return its size
      * Only works for zip files whose uncompressed size is less than 4 GB,
@@ -716,33 +749,30 @@ public class ServerUtils {
         return false;
     }
 
-    public static int getEstimatedWorkerCountForRASTopo(Map<String, Object> topoConf, StormTopology topology)
-        throws InvalidTopologyException {
+    public static int getEstimatedWorkerCountForRASTopo(Map<String, Object> topoConf, StormTopology topology) throws InvalidTopologyException {
         return (int) Math.ceil(getEstimatedTotalHeapMemoryRequiredByTopo(topoConf, topology) /
                 ObjectReader.getDouble(topoConf.get(Config.WORKER_HEAP_MEMORY_MB)));
     }
 
-    public static double getEstimatedTotalHeapMemoryRequiredByTopo(Map<String, Object> topoConf, StormTopology topology)
-        throws InvalidTopologyException {
+    public static double getEstimatedTotalHeapMemoryRequiredByTopo(Map<String, Object> topoConf, StormTopology topology) throws InvalidTopologyException {
         Map<String, Integer> componentParallelism = getComponentParallelism(topoConf, topology);
         double totalMemoryRequired = 0.0;
 
-        for (Map.Entry<String, NormalizedResourceRequest> entry: ResourceUtils.getBoltsResources(topology, topoConf).entrySet()) {
+        for(Map.Entry<String, Map<String, Double>> entry: ResourceUtils.getBoltsResources(topology, topoConf).entrySet()) {
             int parallelism = componentParallelism.getOrDefault(entry.getKey(), 1);
-            double memoryRequirement = entry.getValue().getOnHeapMemoryMb();
+            double memoryRequirement = entry.getValue().get(Config.TOPOLOGY_COMPONENT_RESOURCES_ONHEAP_MEMORY_MB);
             totalMemoryRequired += memoryRequirement * parallelism;
         }
 
-        for (Map.Entry<String, NormalizedResourceRequest> entry: ResourceUtils.getSpoutsResources(topology, topoConf).entrySet()) {
+        for(Map.Entry<String, Map<String, Double>> entry: ResourceUtils.getSpoutsResources(topology, topoConf).entrySet()) {
             int parallelism = componentParallelism.getOrDefault(entry.getKey(), 1);
-            double memoryRequirement = entry.getValue().getOnHeapMemoryMb();
+            double memoryRequirement = entry.getValue().get(Config.TOPOLOGY_COMPONENT_RESOURCES_ONHEAP_MEMORY_MB);
             totalMemoryRequired += memoryRequirement * parallelism;
         }
         return totalMemoryRequired;
     }
 
-    public static Map<String, Integer> getComponentParallelism(Map<String, Object> topoConf, StormTopology topology)
-        throws InvalidTopologyException {
+    public static Map<String, Integer> getComponentParallelism(Map<String, Object> topoConf, StormTopology topology) throws InvalidTopologyException {
         Map<String, Integer> ret = new HashMap<>();
         Map<String, Object> components = StormCommon.allComponents(topology);
         for (Map.Entry<String, Object> entry : components.entrySet()) {
@@ -760,12 +790,5 @@ public class ServerUtils {
             ret = Math.min(maxParallel, numTasks);
         }
         return ret;
-    }
-
-    public static Subject principalNameToSubject(String name) {
-        SingleUserPrincipal principal = new SingleUserPrincipal(name);
-        Subject sub = new Subject();
-        sub.getPrincipals().add(principal);
-        return sub;
     }
 }

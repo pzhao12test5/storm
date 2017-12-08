@@ -40,7 +40,6 @@ import org.apache.storm.cluster.ClusterStateContext;
 import org.apache.storm.cluster.ClusterUtils;
 import org.apache.storm.cluster.DaemonType;
 import org.apache.storm.cluster.IStormClusterState;
-import org.apache.storm.daemon.Acker;
 import org.apache.storm.daemon.GrouperFactory;
 import org.apache.storm.daemon.StormCommon;
 import org.apache.storm.daemon.Task;
@@ -382,16 +381,20 @@ public abstract class Executor implements Callable, EventHandler<Object> {
         final Integer tickTimeSecs = ObjectReader.getInt(topoConf.get(Config.TOPOLOGY_TICK_TUPLE_FREQ_SECS), null);
         boolean enableMessageTimeout = (Boolean) topoConf.get(Config.TOPOLOGY_ENABLE_MESSAGE_TIMEOUTS);
         if (tickTimeSecs != null) {
-            if ((!Acker.ACKER_COMPONENT_ID.equals(componentId) && Utils.isSystemId(componentId))
-                || (!enableMessageTimeout && isSpout)) {
-                LOG.info("Timeouts disabled for executor {}:{}", componentId, executorId);
+            if (Utils.isSystemId(componentId) || (!enableMessageTimeout && isSpout)) {
+                LOG.info("Timeouts disabled for executor " + componentId + ":" + executorId);
             } else {
                 StormTimer timerTask = workerData.getUserTimer();
-                TupleImpl tuple = new TupleImpl(workerTopologyContext, new Values(tickTimeSecs),
-                    (int) Constants.SYSTEM_TASK_ID, Constants.SYSTEM_TICK_STREAM_ID);
-                final List<AddressedTuple> tickTuple =
-                    Lists.newArrayList(new AddressedTuple(AddressedTuple.BROADCAST_DEST, tuple));
-                timerTask.scheduleRecurring(tickTimeSecs, tickTimeSecs, () -> receiveQueue.publish(tickTuple));
+                timerTask.scheduleRecurring(tickTimeSecs, tickTimeSecs, new Runnable() {
+                    @Override
+                    public void run() {
+                        TupleImpl tuple = new TupleImpl(workerTopologyContext, new Values(tickTimeSecs),
+                                (int) Constants.SYSTEM_TASK_ID, Constants.SYSTEM_TICK_STREAM_ID);
+                        List<AddressedTuple> tickTuple =
+                                Lists.newArrayList(new AddressedTuple(AddressedTuple.BROADCAST_DEST, tuple));
+                        receiveQueue.publish(tickTuple);
+                    }
+                });
             }
         }
     }

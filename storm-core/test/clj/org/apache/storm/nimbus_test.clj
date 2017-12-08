@@ -55,12 +55,8 @@
 (def ^:dynamic *STORM-CONF* (clojurify-structure (ConfigUtils/readStormConfig)))
 
 (defn- mk-nimbus
-  ([conf inimbus]
-   (mk-nimbus conf inimbus nil nil nil nil))
-  ([conf inimbus blob-store leader-elector group-mapper cluster-state]
-    ;blacklist scheduler requires nimbus-monitor-freq-secs as input parameter.
-   (let [conf-with-nimbus-monitor-freq (merge {NIMBUS-MONITOR-FREQ-SECS 10} conf)]
-     (Nimbus. conf-with-nimbus-monitor-freq inimbus cluster-state nil blob-store nil leader-elector group-mapper))))
+  [conf inimbus blob-store leader-elector group-mapper cluster-state]
+  (Nimbus. conf inimbus cluster-state nil blob-store nil leader-elector group-mapper))
 
 (defn- from-json
        [^String str]
@@ -1619,12 +1615,13 @@
                     {STORM-ZOOKEEPER-AUTH-SCHEME scheme
                      STORM-ZOOKEEPER-AUTH-PAYLOAD digest
                      STORM-PRINCIPAL-TO-LOCAL-PLUGIN "org.apache.storm.security.auth.DefaultPrincipalToLocal"
-                     NIMBUS-MONITOR-FREQ-SECS 10
                      NIMBUS-THRIFT-PORT 6666})
           expected-acls Nimbus/ZK_ACLS
           fake-inimbus (reify INimbus (getForcedScheduler [this] nil) (prepare [this conf dir] nil))
           fake-cu (proxy [ServerConfigUtils] []
                     (nimbusTopoHistoryStateImpl [conf] nil))
+          fake-ru (proxy [ReflectionUtils] []
+                    (newInstanceImpl [_]))
           fake-utils (proxy [Utils] []
                        (makeUptimeComputer [] (proxy [Utils$UptimeComputer] []
                                                 (upTime [] 0))))
@@ -1632,12 +1629,13 @@
 	  fake-common (proxy [StormCommon] []
                              (mkAuthorizationHandler [_] nil))]
       (with-open [_ (ServerConfigUtilsInstaller. fake-cu)
+                  _ (ReflectionUtilsInstaller. fake-ru)
                   _ (UtilsInstaller. fake-utils)
                   - (StormCommonInstaller. fake-common)
                   zk-le (MockedZookeeper. (proxy [Zookeeper] []
                           (zkLeaderElectorImpl [conf blob-store tc] nil)))
                   mocked-cluster (MockedCluster. cluster-utils)]
-          (mk-nimbus auth-conf fake-inimbus)
+          (Nimbus. auth-conf fake-inimbus)
           (.mkStormClusterStateImpl (Mockito/verify cluster-utils (Mockito/times 1)) (Mockito/any) (Mockito/eq expected-acls) (Mockito/any))
           ))))
 
@@ -1646,9 +1644,9 @@
                           (doto (LocalCluster$Builder. )
                             (.withDaemonConf {SUPERVISOR-ENABLE false TOPOLOGY-ACKER-EXECUTORS 0 TOPOLOGY-EVENTLOGGER-EXECUTORS 0})))]
     (let [nimbus (.getNimbus cluster)]
-      (is (thrown-cause? IllegalArgumentException (.beginFileDownload nimbus nil)))
-      (is (thrown-cause? IllegalArgumentException (.beginFileDownload nimbus "")))
-      (is (thrown-cause? IllegalArgumentException (.beginFileDownload nimbus "/bogus-path/foo")))
+      (is (thrown-cause? AuthorizationException (.beginFileDownload nimbus nil)))
+      (is (thrown-cause? AuthorizationException (.beginFileDownload nimbus "")))
+      (is (thrown-cause? AuthorizationException (.beginFileDownload nimbus "/bogus-path/foo")))
       )))
 
 (deftest test-validate-topo-config-on-submit
@@ -1897,7 +1895,7 @@
         hb-cache (into {}(map vector inactive-topos '(nil nil)))
         mock-state (mock-cluster-state)
         mock-blob-store (Mockito/mock BlobStore)
-        conf {NIMBUS-MONITOR-FREQ-SECS 10}]
+        conf {}]
     (with-open [_ (MockedZookeeper. (proxy [Zookeeper] []
                     (zkLeaderElectorImpl [conf blob-store tc] (MockLeaderElector. ))))]
       (let [nimbus (Mockito/spy (Nimbus. conf nil mock-state nil mock-blob-store nil nil))]
@@ -1942,7 +1940,7 @@
         hb-cache {"topo1" nil "topo2" nil}
         mock-state (mock-cluster-state)
         mock-blob-store (Mockito/mock BlobStore)
-        conf {NIMBUS-MONITOR-FREQ-SECS 10}]
+        conf {}]
     (with-open [_ (MockedZookeeper. (proxy [Zookeeper] []
                     (zkLeaderElectorImpl [conf blob-store tc] (MockLeaderElector. ))))]
       (let [nimbus (Mockito/spy (Nimbus. conf nil mock-state nil mock-blob-store nil nil))]
@@ -1977,7 +1975,7 @@
         mock-state (mock-cluster-state)
         mock-blob-store (Mockito/mock BlobStore)
         mock-tc (Mockito/mock TopoCache)
-        nimbus (Nimbus. {NIMBUS-MONITOR-FREQ-SECS 10} nil mock-state nil mock-blob-store mock-tc (MockLeaderElector. ) nil)]
+        nimbus (Nimbus. {} nil mock-state nil mock-blob-store mock-tc (MockLeaderElector. ) nil)]
     (let [supervisor1-topologies (clojurify-structure (Nimbus/topologiesOnSupervisor assignments "super1"))
           user1-topologies (clojurify-structure (.filterAuthorized nimbus "getTopology" supervisor1-topologies))
           supervisor2-topologies (clojurify-structure (Nimbus/topologiesOnSupervisor assignments "super2"))
@@ -1998,7 +1996,7 @@
         mock-state (mock-cluster-state)
         mock-blob-store (Mockito/mock BlobStore)
         mock-tc (Mockito/mock TopoCache)
-        nimbus (Nimbus. {NIMBUS-MONITOR-FREQ-SECS 10} nil mock-state nil mock-blob-store mock-tc (MockLeaderElector. ) nil)]
+        nimbus (Nimbus. {} nil mock-state nil mock-blob-store mock-tc (MockLeaderElector. ) nil)]
     (.thenReturn (Mockito/when (.readTopoConf mock-tc (Mockito/eq "authorized") (Mockito/anyObject))) {TOPOLOGY-NAME "authorized"})
     (.thenReturn (Mockito/when (.readTopoConf mock-tc (Mockito/eq "topo1") (Mockito/anyObject))) {TOPOLOGY-NAME "topo1"})
     (.setAuthorizationHandler nimbus (reify IAuthorizer (permit [this context operation topo-conf] (= "authorized" (get topo-conf TOPOLOGY-NAME)))))

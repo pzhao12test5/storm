@@ -23,7 +23,7 @@ import org.apache.storm.generated.StormTopology;
 import org.apache.storm.generated.WorkerResources;
 import org.apache.storm.networktopography.DNSToSwitchMapping;
 import org.apache.storm.scheduler.Cluster;
-import org.apache.storm.scheduler.SupervisorResources;
+import org.apache.storm.scheduler.Cluster.SupervisorResources;
 import org.apache.storm.scheduler.ExecutorDetails;
 import org.apache.storm.scheduler.INimbus;
 import org.apache.storm.scheduler.SchedulerAssignment;
@@ -35,11 +35,13 @@ import org.apache.storm.scheduler.WorkerSlot;
 import org.apache.storm.scheduler.resource.RAS_Node;
 import org.apache.storm.scheduler.resource.ResourceAwareScheduler;
 import org.apache.storm.scheduler.resource.SchedulingResult;
-import org.apache.storm.scheduler.resource.strategies.scheduling.BaseResourceAwareStrategy.ObjectResources;
+import org.apache.storm.scheduler.resource.TestUtilsForResourceAwareScheduler;
+import org.apache.storm.scheduler.resource.strategies.scheduling.DefaultResourceAwareStrategy.ObjectResources;
 import org.apache.storm.topology.SharedOffHeapWithinNode;
 import org.apache.storm.topology.SharedOffHeapWithinWorker;
 import org.apache.storm.topology.SharedOnHeap;
 import org.apache.storm.topology.TopologyBuilder;
+import org.apache.storm.utils.Utils;
 import org.junit.Assert;
 import org.junit.Test;
 import org.slf4j.Logger;
@@ -201,7 +203,7 @@ public class TestDefaultResourceAwareStrategy {
     @Test
     public void testMultipleRacks() {
 
-        final Map<String, SupervisorDetails> supMap = new HashMap<>();
+        final Map<String, SupervisorDetails> supMap = new HashMap<String, SupervisorDetails>();
         final Map<String, SupervisorDetails> supMapRack1 = genSupervisors(10, 4, 0, 400, 8000);
         //generate another rack of supervisors with less resources
         final Map<String, SupervisorDetails> supMapRack2 = genSupervisors(10, 4, 10, 200, 4000);
@@ -229,7 +231,7 @@ public class TestDefaultResourceAwareStrategy {
         DNSToSwitchMapping TestNetworkTopographyPlugin = new DNSToSwitchMapping() {
             @Override
             public Map<String, String> resolve(List<String> names) {
-                Map<String, String> ret = new HashMap<>();
+                Map<String, String> ret = new HashMap<String, String>();
                 for (SupervisorDetails sup : supMapRack1.values()) {
                     ret.put(sup.getHost(), "rack-0");
                 }
@@ -267,7 +269,7 @@ public class TestDefaultResourceAwareStrategy {
             String rack = entry.getValue();
             List<String> nodesForRack = rackToNodes.get(rack);
             if (nodesForRack == null) {
-                nodesForRack = new ArrayList<>();
+                nodesForRack = new ArrayList<String>();
                 rackToNodes.put(rack, nodesForRack);
             }
             nodesForRack.add(hostName);
@@ -275,10 +277,9 @@ public class TestDefaultResourceAwareStrategy {
         cluster.setNetworkTopography(rackToNodes);
 
         DefaultResourceAwareStrategy rs = new DefaultResourceAwareStrategy();
-        
+
         rs.prepare(cluster);
-        TreeSet<ObjectResources> sortedRacks = rs.sortRacks(null, topo1);
-        LOG.info("Sorted Racks {}", sortedRacks);
+        TreeSet<ObjectResources> sortedRacks= rs.sortRacks(topo1.getId());
 
         Assert.assertEquals("# of racks sorted", 5, sortedRacks.size());
         Iterator<ObjectResources> it = sortedRacks.iterator();
@@ -419,7 +420,7 @@ public class TestDefaultResourceAwareStrategy {
         DefaultResourceAwareStrategy rs = new DefaultResourceAwareStrategy();
 
         rs.prepare(cluster);
-        TreeSet<ObjectResources> sortedRacks= rs.sortRacks(null, topo1);
+        TreeSet<ObjectResources> sortedRacks= rs.sortRacks(topo1.getId());
 
         Assert.assertEquals("# of racks sorted", 5, sortedRacks.size());
         Iterator<ObjectResources> it = sortedRacks.iterator();

@@ -211,10 +211,8 @@ public class WorkerState {
     final Map<String, Object> userSharedResources;
     final LoadMapping loadMapping;
     final AtomicReference<Map<String, VersionedData<Assignment>>> assignmentVersions;
-    // Whether this worker is going slow. 0 indicates the backpressure is off
-    final AtomicLong backpressure = new AtomicLong(0);
-    // How long until the backpressure znode is invalid.
-    final long backpressureZnodeTimeoutMs;
+    // Whether this worker is going slow
+    final AtomicBoolean backpressure = new AtomicBoolean(false);
     // If the transfer queue is backed-up
     final AtomicBoolean transferBackpressure = new AtomicBoolean(false);
     // a trigger for synchronization with executors
@@ -300,7 +298,6 @@ public class WorkerState {
         }
         Collections.sort(taskIds);
         this.topologyConf = topologyConf;
-        this.backpressureZnodeTimeoutMs = ObjectReader.getInt(topologyConf.get(Config.BACKPRESSURE_ZNODE_TIMEOUT_SECS)) * 1000;
         this.topology = ConfigUtils.readSupervisorTopology(conf, topologyId, AdvancedFSOps.make(conf));
         this.systemTopology = StormCommon.systemTopology(topologyConf, topology);
         this.taskToComponent = StormCommon.stormTaskInfo(topology, topologyConf);
@@ -336,7 +333,6 @@ public class WorkerState {
             LOG.warn("WILL TRY TO SERIALIZE ALL TUPLES (Turn off {} for production", Config.TOPOLOGY_TESTING_ALWAYS_TRY_SERIALIZE);
         }
         this.drainer = new TransferDrainer();
-
     }
 
     public void refreshConnections() {
@@ -445,7 +441,7 @@ public class WorkerState {
     }
 
     public void refreshThrottle() {
-        boolean backpressure = stormClusterState.topologyBackpressure(topologyId, backpressureZnodeTimeoutMs, this::refreshThrottle);
+        boolean backpressure = stormClusterState.topologyBackpressure(topologyId, this::refreshThrottle);
         this.throttleOn.set(backpressure);
     }
 
@@ -485,7 +481,7 @@ public class WorkerState {
         refreshActiveTimer.schedule(delaySecs, new Runnable() {
             @Override public void run() {
                 if (areAllConnectionsReady()) {
-                    LOG.info("All connections are ready for worker {}:{} with id {}", assignmentId, port, workerId);
+                    LOG.info("All connections are ready for worker {}:{} with id", assignmentId, port, workerId);
                     isWorkerActive.set(Boolean.TRUE);
                 } else {
                     refreshActiveTimer.schedule(recurSecs, () -> activateWorkerWhenAllConnectionsReady(), false, 0);
@@ -585,7 +581,7 @@ public class WorkerState {
             return new WorkerTopologyContext(systemTopology, topologyConf, taskToComponent, componentToSortedTasks,
                 componentToStreamToFields, topologyId, codeDir, pidDir, port, taskIds,
                 defaultSharedResources,
-                userSharedResources, cachedTaskToNodePort, assignmentId);
+                userSharedResources);
         } catch (IOException e) {
             throw Utils.wrapInRuntime(e);
         }

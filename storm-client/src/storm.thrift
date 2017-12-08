@@ -188,8 +188,6 @@ struct SupervisorSummary {
   7: optional map<string, double> total_resources;
   8: optional double used_mem;
   9: optional double used_cpu;
-  10: optional double fragmented_mem;
-  11: optional double fragmented_cpu;
 }
 
 struct NimbusSummary {
@@ -418,10 +416,6 @@ struct RebalanceOptions {
   1: optional i32 wait_secs;
   2: optional i32 num_workers;
   3: optional map<string, i32> num_executors;
-  4: optional map<string, map<string, double>> topology_resources_overrides;
-  5: optional string topology_conf_overrides;
-  //This value is not intended to be explicitly set by end users and will be ignored if they do
-  6: optional string principal
 }
 
 struct Credentials {
@@ -496,8 +490,6 @@ struct WorkerResources {
     3: optional double cpu;
     4: optional double shared_mem_on_heap; //This is just for accounting mem_on_heap should be used for enforcement
     5: optional double shared_mem_off_heap; //This is just for accounting mem_off_heap should be used for enforcement
-    6: optional map<string, double> resources; // Generic resources Map
-    7: optional map<string, double> shared_resources; // Shared Generic resources Map
 }
 struct Assignment {
     1: required string master_code_dir;

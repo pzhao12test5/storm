@@ -65,24 +65,6 @@ public class Config extends HashMap<String, Object> {
     public static final String TOPOLOGY_DISABLE_LOADAWARE_MESSAGING = "topology.disable.loadaware.messaging";
 
     /**
-     * This signifies the load congestion among target tasks in scope. Currently it's only used in LoadAwareShuffleGrouping.
-     * When the average load is higher than the higher bound, the executor should choose target tasks in a higher scope,
-     * The scopes and their orders are: EVERYTHING > RACK_LOCAL > HOST_LOCAL > WORKER_LOCAL
-     */
-    @isPositiveNumber
-    @NotNull
-    public static final String TOPOLOGY_LOCALITYAWARE_HIGHER_BOUND_PERCENT = "topology.localityaware.higher.bound.percent";
-
-    /**
-     * This signifies the load congestion among target tasks in scope. Currently it's only used in LoadAwareShuffleGrouping.
-     * When the average load is lower than the lower bound, the executor should choose target tasks in a lower scope.
-     * The scopes and their orders are: EVERYTHING > RACK_LOCAL > HOST_LOCAL > WORKER_LOCAL
-     */
-    @isPositiveNumber
-    @NotNull
-    public static final String TOPOLOGY_LOCALITYAWARE_LOWER_BOUND_PERCENT = "topology.localityaware.lower.bound.percent";
-
-    /**
      * Try to serialize all tuples, even for local transfers.  This should only be used
      * for testing, as a sanity check that all of your tuples are setup properly.
      */
@@ -91,12 +73,11 @@ public class Config extends HashMap<String, Object> {
 
     /**
      * A map with blobstore keys mapped to each filename the worker will have access to in the
-     * launch directory to the blob by local file name, uncompress flag, and if the worker
-     * should restart when the blob is updated. localname, workerRestart, and
-     * uncompress are optional. If localname is not specified the name of the key is used instead.
-     * Each topologywill have different map of blobs.  Example: topology.blobstore.map: {"blobstorekey" :
+     * launch directory to the blob by local file name and uncompress flag. Both localname and
+     * uncompress flag are optional. It uses the key is localname is not specified. Each topology
+     * will have different map of blobs.  Example: topology.blobstore.map: {"blobstorekey" :
      * {"localname": "myblob", "uncompress": false}, "blobstorearchivekey" :
-     * {"localname": "myarchive", "uncompress": true, "workerRestart": true}}
+     * {"localname": "myarchive", "uncompress": true}}
      */
     @CustomValidator(validatorClass = MapOfStringToMapOfStringToObjectValidator.class)
     public static final String TOPOLOGY_BLOBSTORE_MAP = "topology.blobstore.map";
@@ -146,23 +127,6 @@ public class Config extends HashMap<String, Object> {
      */
     @isPositiveNumber
     public static final String BACKPRESSURE_DISRUPTOR_LOW_WATERMARK="backpressure.disruptor.low.watermark";
-
-    /**
-     * How long until the backpressure znode is invalid.
-     * It's measured by the data (timestamp) of the znode, not the ctime (creation time) or mtime (modification time), etc.
-     * This must be larger than BACKPRESSURE_ZNODE_UPDATE_FREQ_SECS.
-     */
-    @isInteger
-    @isPositiveNumber
-    public static final String BACKPRESSURE_ZNODE_TIMEOUT_SECS = "backpressure.znode.timeout.secs";
-
-    /**
-     * How often will the data (timestamp) of backpressure znode be updated.
-     * But if the worker backpressure status (on/off) changes, the znode will be updated anyway.
-     */
-    @isInteger
-    @isPositiveNumber
-    public static final String BACKPRESSURE_ZNODE_UPDATE_FREQ_SECS = "backpressure.znode.update.freq.secs";
 
     /**
      * A list of users that are allowed to interact with the topology.  To use this set
@@ -239,12 +203,6 @@ public class Config extends HashMap<String, Object> {
     @isInteger
     @isPositiveNumber(includeZero = true)
     public static final String TOPOLOGY_TASKS = "topology.tasks";
-
-    /**
-     * A map of resources used by each component e.g {"cpu.pcore.percent" : 200.0. "onheap.memory.mb": 256.0, "gpu.count" : 2 }
-     */
-    @isMapEntryType(keyType = String.class, valueType = Number.class)
-    public static final String TOPOLOGY_COMPONENT_RESOURCES_MAP = "topology.component.resources.map";
 
     /**
      * The maximum amount of memory an instance of a spout/bolt will take on heap. This enables the scheduler
@@ -455,13 +413,6 @@ public class Config extends HashMap<String, Object> {
 
     @isListEntryCustom(entryValidatorClasses={MetricRegistryValidator.class})
     public static final String TOPOLOGY_METRICS_CONSUMER_REGISTER = "topology.metrics.consumer.register";
-
-    /**
-     * Enable tracking of network message byte counts per source-destination task. This is off by default as it
-     * creates tasks^2 metric values, but is useful for debugging as it exposes data skew when tuple sizes are uneven.
-     */
-    @isBoolean
-    public static final String TOPOLOGY_SERIALIZED_MESSAGE_SIZE_METRICS = "topology.serialized.message.size.metrics";
 
     /**
      * A map of metric name to class name implementing IMetric that will be created once per worker JVM
@@ -1060,14 +1011,6 @@ public class Config extends HashMap<String, Object> {
     public static final String DRPC_INVOCATIONS_THREADS = "drpc.invocations.threads";
 
     /**
-     * Initialization parameters for the group mapping service plugin.
-     * Provides a way for a @link{STORM_GROUP_MAPPING_SERVICE_PROVIDER_PLUGIN}
-     * implementation to access optional settings.
-     */
-    @isType(type=Map.class)
-    public static final String STORM_GROUP_MAPPING_SERVICE_PARAMS = "storm.group.mapping.service.params";
-
-    /**
      * The default transport plug-in for Thrift client/server communication
      */
     @isString
@@ -1294,12 +1237,6 @@ public class Config extends HashMap<String, Object> {
     public static final String SUPERVISOR_CPU_CAPACITY = "supervisor.cpu.capacity";
 
     /**
-     * A map of resources the Supervisor has e.g {"cpu.pcore.percent" : 200.0. "onheap.memory.mb": 256.0, "gpu.count" : 2.0 }
-     */
-    @isMapEntryType(keyType = String.class, valueType = Number.class)
-    public static final String SUPERVISOR_RESOURCES_MAP = "supervisor.resources.map";
-
-    /**
      * Whether or not to use ZeroMQ for messaging in local mode. If this is set
      * to false, then Storm will use a pure-Java messaging system. The purpose
      * of this flag is to make it easy to run Storm in local mode by eliminating
@@ -1445,12 +1382,6 @@ public class Config extends HashMap<String, Object> {
     public static final String NIMBUS_ADMINS = "nimbus.admins";
 
     /**
-     * A list of groups that are cluster admins and can run any command.
-     */
-    @isStringList
-    public static final String NIMBUS_ADMINS_GROUPS = "nimbus.admins.groups";
-
-    /**
      *  For secure mode we would want to turn on this config
      *  By default this is turned off assuming the default is insecure
      */
@@ -1567,8 +1498,8 @@ public class Config extends HashMap<String, Object> {
     public static final String STORM_EXHIBITOR_PORT = "storm.exhibitor.port";
 
     /*
-     * How often to poll Exhibitor cluster in millis.
-     */
+ * How often to poll Exhibitor cluster in millis.
+ */
     @isString
     public static final String STORM_EXHIBITOR_URIPATH="storm.exhibitor.poll.uripath";
 
@@ -1584,7 +1515,7 @@ public class Config extends HashMap<String, Object> {
     @isInteger
     public static final String STORM_EXHIBITOR_RETRY_TIMES="storm.exhibitor.retry.times";
 
-    /*
+    /**
      * The interval between retries of an Exhibitor operation.
      */
     @isInteger

@@ -106,6 +106,7 @@ public class Utils {
     public static final Logger LOG = LoggerFactory.getLogger(Utils.class);
     public static final String DEFAULT_STREAM_ID = "default";
     private static final Set<Class> defaultAllowedExceptions = new HashSet<>();
+    public static final String FILE_PATH_SEPARATOR = System.getProperty("file.separator");
     private static final List<String> LOCALHOST_ADDRESSES = Lists.newArrayList("localhost", "127.0.0.1", "0:0:0:0:0:0:0:1");
 
     private static ThreadLocal<TSerializer> threadSer = new ThreadLocal<TSerializer>();
@@ -402,24 +403,14 @@ public class Utils {
      * @return true if throwable is instance of klass, false otherwise.
      */
     public static boolean exceptionCauseIsInstanceOf(Class klass, Throwable throwable) {
-        return unwrapTo(klass, throwable) != null;
-    }
-
-    public static <T extends Throwable> T unwrapTo(Class<T> klass, Throwable t) {
+        Throwable t = throwable;
         while (t != null) {
             if (klass.isInstance(t)) {
-                return (T)t;
+                return true;
             }
             t = t.getCause();
         }
-        return null;
-    }
-
-    public static <T extends Throwable> void unwrapAndThrow(Class<T> klass, Throwable t) throws T {
-        T ret = unwrapTo(klass, t);
-        if (ret != null) {
-            throw ret;
-        }
+        return false;
     }
 
     public static RuntimeException wrapInRuntime(Exception e){
@@ -915,7 +906,7 @@ public class Utils {
 
     /**
      * parses the arguments to extract jvm heap memory size in MB.
-     * @param options
+     * @param input
      * @param defaultValue
      * @return the value of the JVM heap memory setting (in MB) in a java command.
      */
@@ -1110,6 +1101,21 @@ public class Utils {
         return dump.toString();
     }
 
+    public static long getVersionFromBlobVersionFile(File versionFile) {
+        long currentVersion = 0;
+        if (versionFile.exists() && !(versionFile.isDirectory())) {
+            try (BufferedReader br = new BufferedReader(new FileReader(versionFile))) {
+                String line = br.readLine();
+                currentVersion = Long.parseLong(line);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+            return currentVersion;
+        } else {
+            return -1;
+        }
+    }
+
     public static boolean checkDirExists(String dir) {
         File file = new File(dir);
         return file.isDirectory();
@@ -1281,18 +1287,6 @@ public class Utils {
             return null;
         }
         return findOne(pred, (Set<T>) map.entrySet());
-    }
-
-    public static Map<String, Object> parseJson(String json) {
-        if (json==null) {
-            return new HashMap<>();
-        } else {
-            try {
-                return (Map<String, Object>) JSONValue.parseWithException(json);
-            } catch (ParseException e) {
-                throw new RuntimeException(e);
-            }
-        }
     }
 
     // Non-static impl methods exist for mocking purposes.

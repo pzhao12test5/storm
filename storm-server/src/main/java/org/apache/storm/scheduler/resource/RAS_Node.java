@@ -26,13 +26,11 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 
-import org.apache.storm.Constants;
 import org.apache.storm.scheduler.Cluster;
 import org.apache.storm.scheduler.ExecutorDetails;
 import org.apache.storm.scheduler.SupervisorDetails;
 import org.apache.storm.scheduler.TopologyDetails;
 import org.apache.storm.scheduler.WorkerSlot;
-import org.apache.storm.utils.ObjectReader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,6 +46,8 @@ public class RAS_Node {
     // {TopologyId -> {WorkerId -> {Executors}}}
     private Map<String, Map<String, Collection<ExecutorDetails>>> topIdToUsedSlots = new HashMap<>();
 
+    private final double totalMemory;
+    private final double totalCpu;
     private final String nodeId;
     private String hostname;
     private boolean isAlive;
@@ -87,6 +87,8 @@ public class RAS_Node {
             this.sup = sup;
         }
 
+        totalMemory = isAlive ? getTotalMemoryResources() : 0.0;
+        totalCpu = isAlive ? getTotalCpuResources() : 0.0;
         HashSet<String> freeById = new HashSet<>(slots.keySet());
         if (assignmentMap != null) {
             for (Map<String, Collection<ExecutorDetails>> assignment : assignmentMap.values()) {
@@ -359,9 +361,9 @@ public class RAS_Node {
             ws,
             exec,
             td,
-            getTotalAvailableResources(),
-            td.getTopologyWorkerMaxHeapSize()
-            );
+            td.getTopologyWorkerMaxHeapSize(),
+            getAvailableMemoryResources(),
+            getAvailableCpuResources());
     }
 
     @Override
@@ -421,34 +423,9 @@ public class RAS_Node {
      *
      * @return the available memory for this node
      */
-    public double getAvailableMemoryResources() {
-        return getTotalAvailableResources().getTotalMemoryMb();
-    }
-
-    /**
-     * Gets total resources for this node.
-     */
-    public NormalizedResourceOffer getTotalResources() {
-        if (sup != null) {
-            return sup.getTotalResources();
-        } else {
-            return new NormalizedResourceOffer();
-        }
-    }
-
-    /**
-     * Gets all available resources for this node.
-     *
-     * @return All of the available resources.
-     */
-    public NormalizedResourceOffer getTotalAvailableResources() {
-        if (sup != null) {
-            NormalizedResourceOffer availableResources = new NormalizedResourceOffer(sup.getTotalResources());
-            availableResources.remove(cluster.getAllScheduledResourcesForNode(sup.getId()));
-            return availableResources;
-        } else {
-            return new NormalizedResourceOffer();
-        }
+    public Double getAvailableMemoryResources() {
+        double used = cluster.getScheduledMemoryForNode(nodeId);
+        return totalMemory - used;
     }
 
     /**
@@ -456,7 +433,7 @@ public class RAS_Node {
      *
      * @return the total memory for this node
      */
-    public double getTotalMemoryResources() {
+    public Double getTotalMemoryResources() {
         if (sup != null) {
             return sup.getTotalMemory();
         } else {
@@ -470,7 +447,7 @@ public class RAS_Node {
      * @return the available cpu for this node
      */
     public double getAvailableCpuResources() {
-        return getTotalAvailableResources().getTotalCpu();
+        return totalCpu - cluster.getScheduledCpuForNode(nodeId);
     }
 
     /**
@@ -478,9 +455,9 @@ public class RAS_Node {
      *
      * @return the total cpu for this node
      */
-    public double getTotalCpuResources() {
+    public Double getTotalCpuResources() {
         if (sup != null) {
-            return sup.getTotalCpu();
+            return sup.getTotalCPU();
         } else {
             return 0.0;
         }
